@@ -1,0 +1,73 @@
+name: Flujo de trabajo para publicar en k8
+
+on: 
+  push:
+    branches:
+      - master
+jobs:
+  install-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar nodejs
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Instalar dependencias...
+        run: npm install
+
+      - name: Construir proyecto...
+        run: npm run build
+
+      - name: Subir carpeta build como artifact
+        id: upload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: build/
+  deploy-dockerhub:
+    needs: install-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Descargar build artifact..
+        uses: actions/download-artifact@v4
+        with:
+          name: build
+          path: ./build
+
+      - name: Validando ruta de carpetas..
+        run: "ls -la"
+      
+      - name: Contruir imagen de docker..
+        run: |
+          docker build -t rangulo1972/frontend-k8-action:latest .
+
+      - name: Autenticando en dockerhub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      
+      - name: Publicando imagen al dockerhub..
+        run: |
+          docker push rangulo1972/frontend-k8-action:latest
+  deploy-k8:
+    needs: deploy-dockerhub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+      
+      - name: Configurar kubectl...
+        uses: actions-hub/kubectl@master
+        env:
+          KUBE_CONFIG: ${{ secrets.CLUSTER_KUBE_CONFIG_K8 }}
+        with:
+          args: apply -f deployment-frontend.yaml
+
